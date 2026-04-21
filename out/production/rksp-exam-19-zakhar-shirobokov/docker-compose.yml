@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: exam-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - exam-network
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: exam-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: events_db
+      POSTGRES_USER: events_user
+      POSTGRES_PASSWORD: events_password
+    volumes:
+      - ./src/main/resources/db/postgres_init.sql:/docker-entrypoint-initdb.d/init.sql
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U events_user -d events_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - exam-network
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.12-alpine
+    container_name: exam-clickhouse
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+    volumes:
+      - ./src/main/resources/db/clickhouse_init.sql:/docker-entrypoint-initdb.d/init.sql
+      - clickhouse_data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - exam-network
+
+  # Опционально: запуск processor-service в docker (для тестов)
+  # processor:
+  #   build: ./processor-service
+  #   ports:
+  #     - "8081:8081"
+  #   environment:
+  #     - RABBITMQ_HOST=rabbitmq
+  #     - POSTGRES_HOST=postgres
+  #     - CLICKHOUSE_HOST=clickhouse
+  #   depends_on:
+  #     rabbitmq: { condition: service_healthy }
+  #     postgres: { condition: service_healthy }
+  #     clickhouse: { condition: service_healthy }
+  #   networks:
+  #     - exam-network
+
+volumes:
+  postgres_data:
+  clickhouse_data:
+
+networks:
+  exam-network:
+    driver: bridge
